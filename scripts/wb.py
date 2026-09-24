@@ -6,6 +6,7 @@
   check                       网关/账号池/模型数一次性体检，非 0 退出码表示不可用
   status                      账号池明细（含 realm / credits / 冷却 / 禁用）
   models [--realm cn|global]  列模型 id 与能力位
+  free [--max-rate 0]         按 credits 积分倍率筛模型；默认只列 x0.00 免费档
   ask MODEL "提示词"           非流式对话；--stream 走 SSE；--file 从文件读提示词
   tools MODEL                 探测该模型是否支持 function calling
   agent MODEL "任务"           把模型当子执行者跑多轮工具循环（内置只读 list_dir/read_file，
@@ -17,6 +18,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -97,6 +99,58 @@ def fmt_flags(m):
     return "tool=%s img=%s reason=%s ctx=%s" % (
         bool(m.get("supports_tool_call")), bool(m.get("supports_images")),
         bool(m.get("supports_reasoning")), m.get("context_length"))
+
+
+def credit_rate(model):
+    """Parse the credits multiplier; missing or malformed metadata is unknown."""
+    value = model.get("credits")
+    if value in (None, ""):
+        return None
+    match = re.search(r"x\s*([0-9]+(?:\.[0-9]+)?)", str(value), re.IGNORECASE)
+    return float(match.group(1)) if match else None
+
+
+def cmd_free(a):
+    """List models by metadata multiplier without spending credits on probes."""
+    models = json.load(req("/v1/models", timeout=60))["data"]
+    known = []
+    unknown = []
+    for model in models:
+        rate = credit_rate(model)
+        if rate is None:
+            unknown.append(model)
+            continue
+        if rate <= a.max_rate:
+            if a.tools_only and not model.get("supports_tool_call"):
+                continue
+            known.append((rate, model))
+
+    known.sort(
+        key=lambda item: (
+            item[0],
+            -int(bool(item[1].get("supports_tool_call"))),
+            -int(bool(item[1].get("supports_reasoning"))),
+            -(item[1].get("context_length") or 0),
+            item[1]["id"],
+        )
+    )
+    for rate, model in known:
+        print(
+            "x%-5.2f %-40s tool=%-5s reason=%-5s ctx=%s"
+            % (
+                rate,
+                model["id"],
+                bool(model.get("supports_tool_call")),
+                bool(model.get("supports_reasoning")),
+                model.get("context_length"),
+            )
+        )
+    print("命中 %d 个（倍率 <= %s）" % (len(known), a.max_rate))
+    if unknown:
+        missing_ids = sorted(model["id"] for model in unknown)
+        print("无倍率元数据、别当免费用：%s" % ", ".join(missing_ids[:8]))
+        if len(missing_ids) > 8:
+            print("  …共 %d 个" % len(missing_ids))
 
 
 def cmd_check(_a):
@@ -351,6 +405,19 @@ def main():
     status.set_defaults(fn=cmd_status)
     m = sub.add_parser("models"); m.add_argument("--realm", choices=["cn", "global"])
     m.set_defaults(fn=cmd_models)
+    free = sub.add_parser("free")
+    free.add_argument(
+        "--max-rate",
+        type=float,
+        default=0.0,
+        help="积分倍率上限，默认 0 = 只看 x0.00 免费档",
+    )
+    free.add_argument(
+        "--tools-only",
+        action="store_true",
+        help="只列支持 function calling 的模型",
+    )
+    free.set_defaults(fn=cmd_free)
     a = sub.add_parser("ask"); a.add_argument("model"); a.add_argument("prompt", nargs="?")
     a.add_argument("--system"); a.add_argument("--file"); a.add_argument("--stream", action="store_true")
     a.add_argument("--show-reasoning", action="store_true"); a.set_defaults(fn=cmd_ask)
