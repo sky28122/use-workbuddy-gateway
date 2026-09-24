@@ -1,0 +1,28 @@
+# Runtime secrets and state
+API_KEY.txt
+config.json
+auths/
+data/
+*.log
+*.pid
+.env
+.env.*
+
+# Generated binaries and toolchains
+*.exe
+*.dll
+tools/
+workbuddy2api/
+
+# Python and editors
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.idea/
+.vscode/
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+
