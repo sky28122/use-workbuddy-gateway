@@ -61,6 +61,19 @@ Model IDs can be realm-prefixed:
 Always query `/v1/models` rather than hard-coding a catalog. A model with
 `supports_tool_call=false` must not be used for the CLI's `agent` loop.
 
+### Credits multiplier
+
+Each model may include a `credits` string such as `x0.00` or
+`x0.34 credits`. It is the current pricing multiplier, not per-request usage.
+The CLI extracts the numeric value after `x`:
+
+- `python scripts/wb.py free --tools-only` lists x0.00 models that support tools.
+- `python scripts/wb.py free --max-rate 0.10` includes rates through x0.10.
+- Missing or malformed metadata is shown separately and never treated as free.
+
+Do not issue real chat requests merely to discover pricing. Multipliers can
+change with promotional windows, so refresh the list before long-running work.
+
 ## Function calling and agent safety
 
 Streaming `tool_calls` may arrive as fragments. Accumulate `arguments` by tool
@@ -87,4 +100,3 @@ Community-reported error codes and reset semantics can change. Treat `11140`,
 `6004`, and similar upstream codes as diagnostic hints and verify them in the
 [upstream issues](https://github.com/Sliverkiss/workbuddy2api/issues) before
 taking account-level action.
-
