@@ -1,8 +1,11 @@
 import importlib.util
+import io
 import os
 import pathlib
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -81,6 +84,86 @@ class ApiKeyTests(unittest.TestCase):
         ):
             headers = wb.request_headers("/healthz")
         self.assertNotIn("Authorization", headers)
+
+
+class ModelCreditTests(unittest.TestCase):
+    def test_credit_rate_parses_suffix_and_rejects_missing(self):
+        wb = load_wb()
+        self.assertEqual(wb.credit_rate({"credits": "x0.00"}), 0.0)
+        self.assertEqual(wb.credit_rate({"credits": "x0.34 credits"}), 0.34)
+        self.assertEqual(wb.credit_rate({"credits": "rate x 0.06"}), 0.06)
+        self.assertIsNone(wb.credit_rate({}))
+        self.assertIsNone(wb.credit_rate({"credits": "unknown"}))
+
+    def test_free_uses_only_model_metadata_and_filters_tools(self):
+        wb = load_wb()
+        models = [
+            {
+                "id": "global:free-tool",
+                "credits": "x0.00 credits",
+                "supports_tool_call": True,
+                "supports_reasoning": True,
+                "context_length": 1000000,
+            },
+            {
+                "id": "global:free-no-tool",
+                "credits": "x0.00",
+                "supports_tool_call": False,
+                "supports_reasoning": True,
+                "context_length": 192000,
+            },
+            {
+                "id": "cn:unknown",
+                "supports_tool_call": True,
+                "supports_reasoning": True,
+                "context_length": 192000,
+            },
+            {
+                "id": "cn:low-cost",
+                "credits": "x0.05",
+                "supports_tool_call": True,
+                "supports_reasoning": True,
+                "context_length": 192000,
+            },
+        ]
+        response = io.BytesIO(json_bytes({"data": models}))
+        output = io.StringIO()
+        with mock.patch.object(wb, "req", return_value=response) as request:
+            with redirect_stdout(output):
+                wb.cmd_free(SimpleNamespace(max_rate=0.0, tools_only=True))
+        rendered = output.getvalue()
+        self.assertIn("global:free-tool", rendered)
+        self.assertNotIn("global:free-no-tool", rendered)
+        self.assertNotIn("cn:low-cost", rendered)
+        self.assertIn("无倍率元数据", rendered)
+        self.assertIn("命中 1 个", rendered)
+        request.assert_called_once_with("/v1/models", timeout=60)
+
+    def test_free_max_rate_includes_low_cost_but_not_unknown(self):
+        wb = load_wb()
+        models = [
+            {"id": "free", "credits": "x0.00"},
+            {"id": "low", "credits": "x0.10 credits"},
+            {"id": "high", "credits": "x0.11"},
+            {"id": "missing"},
+        ]
+        response = io.BytesIO(json_bytes({"data": models}))
+        output = io.StringIO()
+        with mock.patch.object(wb, "req", return_value=response):
+            with redirect_stdout(output):
+                wb.cmd_free(SimpleNamespace(max_rate=0.10, tools_only=False))
+        rendered = output.getvalue()
+        self.assertIn("free", rendered)
+        self.assertIn("low", rendered)
+        self.assertNotIn("high", rendered)
+        self.assertNotIn("x0.00 missing", rendered)
+        self.assertIn("命中 2 个", rendered)
+
+
+def json_bytes(payload):
+    import json
+
+    return json.dumps(payload).encode("utf-8")
 
 
 class PublicationSafetyTests(unittest.TestCase):
