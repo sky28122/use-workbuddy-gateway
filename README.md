@@ -31,12 +31,27 @@ Skill 安装和网关启动。首次使用时会打开上游官方 OAuth/设备�
 ```powershell
 python .\scripts\wb.py check
 python .\scripts\wb.py models --realm global
+python .\scripts\wb.py free --tools-only
+python .\scripts\wb.py free --max-rate 0.10
 python .\scripts\wb.py ask global:deepseek-v4.1-flash "请概括这段内容"
 python .\scripts\wb.py tools global:deepseek-v4.1-flash
 python .\scripts\wb.py agent global:deepseek-v4.1-flash "检查这个目录" --root . --conversation-id demo
 ```
 
 `status` 默认隐藏账号 UID 和昵称；只有明确需要时才使用 `--show-identities`。
+
+## 免费与低价模型
+
+`free` 子命令只读取 `/v1/models` 的 `credits` 积分倍率，不会为了试价发起真实对话：
+
+- `x0.00` 才表示当前免费；
+- `x0.34 credits` 这类带后缀记录会正则提取数值；
+- 缺失 `credits` 不等于免费，而是未知；
+- `--tools-only` 只保留支持 function calling 的模型；
+- `--max-rate 0.10` 可将清单放宽到 0.10 倍以内。
+
+倍率可能随限免窗口改变。长任务开始前应重新运行一次 `free`，不要依赖静态模型白名单，
+也不要通过真实调用试出免费模型。
 
 ## 安全边界
 

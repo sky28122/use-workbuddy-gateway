@@ -35,12 +35,25 @@ See [Windows setup](references/setup-windows.md) for options and recovery.
 ```powershell
 python .\scripts\wb.py check
 python .\scripts\wb.py models --realm global
+python .\scripts\wb.py free --tools-only
+python .\scripts\wb.py free --max-rate 0.10
 python .\scripts\wb.py ask global:deepseek-v4.1-flash "Summarize this"
 python .\scripts\wb.py tools global:deepseek-v4.1-flash
 python .\scripts\wb.py agent global:deepseek-v4.1-flash "Inspect this folder" --root . --conversation-id demo
 ```
 
 `status` hides account UID and nickname unless `--show-identities` is passed.
+
+## Free and low-cost models
+
+The `free` command reads the `/v1/models` `credits` multiplier and does not
+spend credits on probe conversations. Only `x0.00` is free; suffixes such as
+`x0.34 credits` are parsed numerically, while a missing field is unknown rather
+than free. Use `--tools-only` for agent-capable models or `--max-rate 0.10` to
+include models priced at up to 0.10x.
+
+Promotional rates can change. Rerun `free` immediately before a long task and
+do not maintain a static free-model allowlist.
 
 ## Safety
 
